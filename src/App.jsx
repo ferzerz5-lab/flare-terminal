@@ -2,15 +2,43 @@ import { useEffect, useState } from "react";
 import SplitFlapText from "./SplitFlap";
 import { FLIGHTS, RATES, STATUS } from "./data";
 import { fetchLivePrices } from "./ftso";
-import { connectWallet, hasWallet } from "./wallet";
+import { connectWallet, hasWallet, NETWORKS } from "./wallet";
 import { fetchOnChainInvoices, createOnChainInvoice, payOnChainInvoice } from "./invoiceContract";
+
+const ASSET_SYMBOL = {
+  coston2: "FXRP",
+  botchainTestnet: "BOT",
+};
+
+function NetworkPicker({ selectedKey, onSelect, disabled }) {
+  return (
+    <div className="flex gap-2 font-mono text-xs">
+      {Object.values(NETWORKS).map((n) => (
+        <button
+          key={n.key}
+          onClick={() => onSelect(n.key)}
+          disabled={disabled}
+          className={`px-3 py-1.5 rounded border transition disabled:opacity-40 disabled:cursor-not-allowed ${
+            selectedKey === n.key
+              ? "border-amber text-amber bg-amber/10"
+              : "border-steel/30 text-steel hover:border-steel/60"
+          }`}
+        >
+          {n.key === "coston2" ? "FLARE" : "BOT CHAIN"}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function WalletButton({ wallet, connecting, error, onConnect }) {
   if (wallet) {
     return (
       <div className="font-mono text-xs text-right">
         <div className="text-emerald-400">● {wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}</div>
-        <div className="text-steel mt-1">{Number(wallet.balance).toFixed(2)} C2FLR</div>
+        <div className="text-steel mt-1">
+          {Number(wallet.balance).toFixed(2)} {wallet.network.nativeCurrency.symbol}
+        </div>
       </div>
     );
   }
@@ -24,7 +52,7 @@ function WalletButton({ wallet, connecting, error, onConnect }) {
       >
         {connecting ? "CONNECTING..." : hasWallet() ? "CONNECT WALLET" : "INSTALL METAMASK"}
       </button>
-      {error && <div className="text-flarepink text-[10px] mt-1 max-w-[200px]">{error}</div>}
+      {error && <div className="text-flarepink text-[10px] mt-1 max-w-[220px]">{error}</div>}
     </div>
   );
 }
@@ -36,13 +64,15 @@ function CreateInvoiceForm({ wallet, onCreated }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
+  const assetSymbol = ASSET_SYMBOL[wallet.network.key];
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!invoiceId || !amount || !counterparty) return;
     setSubmitting(true);
     setError(null);
     try {
-      await createOnChainInvoice(wallet.signer, wallet.provider, invoiceId, amount, counterparty);
+      await createOnChainInvoice(wallet.signer, wallet.provider, wallet.network, invoiceId, amount, counterparty);
       setInvoiceId("");
       setAmount("");
       setCounterparty("");
@@ -67,7 +97,7 @@ function CreateInvoiceForm({ wallet, onCreated }) {
         />
       </div>
       <div>
-        <label className="text-steel text-[10px] block mb-1">AMOUNT (FXRP)</label>
+        <label className="text-steel text-[10px] block mb-1">AMOUNT ({assetSymbol})</label>
         <input
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
@@ -96,11 +126,15 @@ function CreateInvoiceForm({ wallet, onCreated }) {
   );
 }
 
-function Ticker() {
+function Ticker({ network }) {
   const [rates, setRates] = useState(RATES);
   const [isLive, setIsLive] = useState(false);
 
   useEffect(() => {
+    if (!network.hasLivePrices) {
+      setIsLive(false);
+      return;
+    }
     let cancelled = false;
 
     async function load() {
@@ -122,7 +156,7 @@ function Ticker() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, []);
+  }, [network]);
 
   const items = [...rates, ...rates];
 
@@ -133,7 +167,7 @@ function Ticker() {
           isLive ? "text-emerald-400 bg-emerald-400/10" : "text-steel bg-steel/10"
         }`}
       >
-        {isLive ? "● LIVE FTSO" : "○ CACHED"}
+        {network.hasLivePrices ? (isLive ? "● LIVE FTSO" : "○ CACHED") : "○ FTSO N/A ON THIS CHAIN"}
       </span>
       <div className="flex gap-12 whitespace-nowrap py-2 animate-[scroll_28s_linear_infinite]">
         {items.map((r, i) => (
@@ -156,7 +190,7 @@ function BoardingPass({ flight, wallet, onClose, onPaid }) {
     setPaying(true);
     setError(null);
     try {
-      await payOnChainInvoice(wallet.signer, wallet.provider, flight.id, flight.amount, flight.issuer);
+      await payOnChainInvoice(wallet.signer, wallet.provider, wallet.network, flight.id, flight.amount, flight.issuer);
       onPaid();
       onClose();
     } catch (err) {
@@ -191,7 +225,7 @@ function BoardingPass({ flight, wallet, onClose, onPaid }) {
           <dt className="text-steel">Origin</dt>
           <dd className="text-white text-right">{flight.origin}</dd>
           <dt className="text-steel">Gate</dt>
-          <dd className="text-white text-right">{flight.gate} (Flare)</dd>
+          <dd className="text-white text-right">{flight.gate}</dd>
           <dt className="text-steel">Asset</dt>
           <dd className="text-white text-right">{flight.asset}</dd>
           <dt className="text-steel">Amount</dt>
@@ -208,7 +242,7 @@ function BoardingPass({ flight, wallet, onClose, onPaid }) {
             disabled={paying}
             className="mt-4 w-full py-2 text-xs text-emerald-400 border border-emerald-400/40 rounded hover:bg-emerald-400/10 transition disabled:opacity-50"
           >
-            {paying ? "CONFIRMING PAYMENT..." : `PAY ${flight.amount} FXRP`}
+            {paying ? "CONFIRMING PAYMENT..." : `PAY ${flight.amount} ${flight.asset}`}
           </button>
         )}
         <button
@@ -222,37 +256,38 @@ function BoardingPass({ flight, wallet, onClose, onPaid }) {
   );
 }
 
-function formatOnChainInvoice(inv) {
-  const amount = Number(ethersFormatUnits(inv.expectedAmount));
+function formatOnChainInvoice(inv, network) {
+  const decimals = network.settlement === "fxrp" ? 6 : 18;
+  const amount = Number(inv.expectedAmount) / 10 ** decimals;
+  const paid = Number(inv.paidAmount) / 10 ** decimals;
+  const assetSymbol = ASSET_SYMBOL[network.key];
+
   return {
     id: inv.id,
-    origin: "XRPL",
+    origin: network.key === "coston2" ? "XRPL" : "BOT CHAIN",
     gate: "LIVE",
-    asset: "FXRP",
+    asset: assetSymbol,
     amount,
     status: inv.status,
     counterparty: inv.counterparty,
     issuer: inv.issuer,
-    eta: inv.status === "BOARDING" ? "Awaiting payment" : `Paid ${Number(ethersFormatUnits(inv.paidAmount))} FXRP`,
+    eta: inv.status === "BOARDING" ? "Awaiting payment" : `Paid ${paid} ${assetSymbol}`,
     isOnChain: true,
   };
 }
 
-function ethersFormatUnits(value) {
-  return (Number(value) / 1e6).toString();
-}
-
 export default function App() {
+  const [selectedNetworkKey, setSelectedNetworkKey] = useState("coston2");
   const [selected, setSelected] = useState(null);
   const [wallet, setWallet] = useState(null);
   const [connecting, setConnecting] = useState(false);
   const [walletError, setWalletError] = useState(null);
   const [onChainInvoices, setOnChainInvoices] = useState([]);
 
-  async function refreshInvoices(provider) {
+  async function refreshInvoices(provider, network) {
     try {
-      const raw = await fetchOnChainInvoices(provider);
-      setOnChainInvoices(raw.map(formatOnChainInvoice));
+      const raw = await fetchOnChainInvoices(provider, network);
+      setOnChainInvoices(raw.map((inv) => formatOnChainInvoice(inv, network)));
     } catch (err) {
       console.error("Failed to load on-chain invoices:", err);
     }
@@ -262,9 +297,9 @@ export default function App() {
     setWalletError(null);
     setConnecting(true);
     try {
-      const result = await connectWallet();
+      const result = await connectWallet(selectedNetworkKey);
       setWallet(result);
-      await refreshInvoices(result.provider);
+      await refreshInvoices(result.provider, result.network);
     } catch (err) {
       console.error("Wallet connect failed:", err);
       setWalletError(err.message || "Connection failed");
@@ -273,26 +308,38 @@ export default function App() {
     }
   }
 
+  function handleNetworkSelect(key) {
+    setSelectedNetworkKey(key);
+    setWallet(null);
+    setOnChainInvoices([]);
+  }
+
+  const activeNetwork = wallet ? wallet.network : NETWORKS[selectedNetworkKey];
   const board = [...onChainInvoices, ...FLIGHTS];
 
   return (
     <div className="min-h-screen bg-charcoal text-white font-grotesk">
       <header className="px-6 pt-8 pb-4 flex justify-between items-start gap-4">
         <div>
-          <div className="text-steel text-xs tracking-[0.3em] mb-1">FLARE NETWORK</div>
+          <div className="text-steel text-xs tracking-[0.3em] mb-1">
+            {activeNetwork.key === "coston2" ? "FLARE NETWORK" : "BOT CHAIN"}
+          </div>
           <SplitFlapText text="FLARE TERMINAL" className="text-3xl md:text-5xl" stagger={20} />
           <p className="text-steel text-sm mt-3 max-w-md">
             Invoices don't sit in a spreadsheet here. They fly in from XRPL, Bitcoin,
             and Dogecoin, clear customs as FAssets, and land on Flare, reconciled,
             verified, done.
           </p>
+          <div className="mt-4">
+            <NetworkPicker selectedKey={selectedNetworkKey} onSelect={handleNetworkSelect} disabled={!!wallet} />
+          </div>
         </div>
         <WalletButton wallet={wallet} connecting={connecting} error={walletError} onConnect={handleConnect} />
       </header>
 
-      <Ticker />
+      <Ticker network={activeNetwork} />
 
-      {wallet && <CreateInvoiceForm wallet={wallet} onCreated={() => refreshInvoices(wallet.provider)} />}
+      {wallet && <CreateInvoiceForm wallet={wallet} onCreated={() => refreshInvoices(wallet.provider, wallet.network)} />}
 
       <main className="px-6 py-6">
         <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 text-steel text-xs tracking-widest pb-2 border-b border-steel/20">
@@ -326,7 +373,7 @@ export default function App() {
       </main>
 
       <footer className="px-6 py-6 text-steel text-xs">
-        Powered by Flare FTSO + FAssets, Coston2 Testnet Demo
+        Powered by Flare FTSO + FAssets on Coston2, native BOT settlement on BOT Chain Testnet
       </footer>
 
       {selected && (
@@ -334,7 +381,7 @@ export default function App() {
           flight={selected}
           wallet={wallet}
           onClose={() => setSelected(null)}
-          onPaid={() => wallet && refreshInvoices(wallet.provider)}
+          onPaid={() => wallet && refreshInvoices(wallet.provider, wallet.network)}
         />
       )}
     </div>
