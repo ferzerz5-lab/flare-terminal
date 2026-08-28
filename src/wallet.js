@@ -1,39 +1,68 @@
 import { ethers } from "ethers";
 
-export const COSTON2_PARAMS = {
-  chainId: "0x72",
-  chainName: "Flare Testnet Coston2",
-  nativeCurrency: { name: "Coston2 Flare", symbol: "C2FLR", decimals: 18 },
-  rpcUrls: ["https://coston2-api.flare.network/ext/C/rpc"],
-  blockExplorerUrls: ["https://coston2-explorer.flare.network"],
+export const NETWORKS = {
+  coston2: {
+    key: "coston2",
+    label: "Flare Testnet Coston2",
+    chainIdHex: "0x72",
+    chainIdDecimal: 114,
+    nativeCurrency: { name: "Coston2 Flare", symbol: "C2FLR", decimals: 18 },
+    rpcUrls: ["https://coston2-api.flare.network/ext/C/rpc"],
+    blockExplorerUrls: ["https://coston2-explorer.flare.network"],
+    settlement: "fxrp",
+    hasLivePrices: true,
+  },
+  botchainTestnet: {
+    key: "botchainTestnet",
+    label: "BOT Chain Testnet",
+    chainIdHex: "0x3c8",
+    chainIdDecimal: 968,
+    nativeCurrency: { name: "BOT", symbol: "BOT", decimals: 18 },
+    rpcUrls: ["https://rpc.bohr.life"],
+    blockExplorerUrls: ["https://scan.bohr.life"],
+    settlement: "native",
+    hasLivePrices: false,
+  },
 };
 
 export function hasWallet() {
   return typeof window !== "undefined" && !!window.ethereum;
 }
 
-export async function connectWallet() {
-  if (!hasWallet()) {
-    throw new Error("No wallet found. Install MetaMask first.");
-  }
-
-  const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-
+async function ensureNetwork(networkConfig) {
   try {
     await window.ethereum.request({
       method: "wallet_switchEthereumChain",
-      params: [{ chainId: COSTON2_PARAMS.chainId }],
+      params: [{ chainId: networkConfig.chainIdHex }],
     });
   } catch (switchError) {
     if (switchError.code === 4902) {
       await window.ethereum.request({
         method: "wallet_addEthereumChain",
-        params: [COSTON2_PARAMS],
+        params: [
+          {
+            chainId: networkConfig.chainIdHex,
+            chainName: networkConfig.label,
+            nativeCurrency: networkConfig.nativeCurrency,
+            rpcUrls: networkConfig.rpcUrls,
+            blockExplorerUrls: networkConfig.blockExplorerUrls,
+          },
+        ],
       });
     } else {
       throw switchError;
     }
   }
+}
+
+export async function connectWallet(networkKey = "coston2") {
+  if (!hasWallet()) {
+    throw new Error("No wallet found. Install MetaMask first.");
+  }
+
+  const networkConfig = NETWORKS[networkKey];
+  await window.ethereum.request({ method: "eth_requestAccounts" });
+  await ensureNetwork(networkConfig);
 
   const provider = new ethers.BrowserProvider(window.ethereum);
   const signer = await provider.getSigner();
@@ -41,5 +70,11 @@ export async function connectWallet() {
   const balanceWei = await provider.getBalance(address);
   const balance = ethers.formatEther(balanceWei);
 
-  return { address, balance, provider, signer };
+  return { address, balance, provider, signer, network: networkConfig };
+}
+
+export async function detectCurrentNetwork() {
+  if (!hasWallet()) return null;
+  const chainIdHex = await window.ethereum.request({ method: "eth_chainId" });
+  return Object.values(NETWORKS).find((n) => n.chainIdHex.toLowerCase() === chainIdHex.toLowerCase()) || null;
 }
