@@ -2,7 +2,7 @@ import { ethers } from "ethers";
 
 export const CONTRACT_ADDRESSES = {
   coston2: "0xe997AfCEdE78e743e1d474a36209a6C2A5A39F76",
-  botchainTestnet: "0xF44df427133003aD13a5cBf4Cdcd871554DC8Af2",
+  botchainMainnet: "0xF44df427133003aD13a5cBf4Cdcd871554DC8Af2",
 };
 
 const FLARE_REGISTRY_ADDRESS = "0xaD67FE66660Fb8dFE9d6b1b4240d8650e30F6019";
