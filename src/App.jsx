@@ -7,7 +7,7 @@ import { fetchOnChainInvoices, createOnChainInvoice, payOnChainInvoice } from ".
 
 const ASSET_SYMBOL = {
   coston2: "FXRP",
-  botchainTestnet: "BOT",
+  botchainMainnet: "BOT",
 };
 
 function NetworkPicker({ selectedKey, onSelect, disabled }) {
