@@ -372,8 +372,15 @@ export default function App() {
         })}
       </main>
 
-      <footer className="px-6 py-6 text-steel text-xs">
-        Powered by Flare FTSO + FAssets on Coston2, native BOT settlement on BOT Chain Testnet
+            <footer className="px-6 py-6 text-steel text-xs">
+        Powered by Flare FTSO + FAssets on Coston2, native BOT settlement on BOT Chain mainnet.{" "}
+        <a href="https://botchain.ai" target="_blank" rel="noopener noreferrer" className="underline hover:text-amber">
+          botchain.ai
+        </a>
+        {" "}·{" "}
+        <a href="https://scan.botchain.ai" target="_blank" rel="noopener noreferrer" className="underline hover:text-amber">
+          scan.botchain.ai
+        </a>
       </footer>
 
       {selected && (
